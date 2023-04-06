@@ -1,0 +1,44 @@
+#Linux：
+trimmomatic SE -phred33 SRR10032677.fastq.gz TrimmedSRR10032677.fastq.gz ILLUMINACLIP:/home/lyo/miniconda3/pkgs/trimmomatic-0.39-1/share/trimmomatic-0.39-1/adapters/TruSeq3-SE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:50
+
+trimmomatic SE -phred33 SRR10032678.fastq.gz TrimmedSRR10032678.fastq.gz ILLUMINACLIP:/home/lyo/miniconda3/pkgs/trimmomatic-0.39-1/share/trimmomatic-0.39-1/adapters/TruSeq3-SE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:50
+
+bowtie2 -p 8 -3 5 --local -x /home/lyo/mm10 -U TrimmedSRR10032677.fastq.gz  | samtools sort -O bam -o /home/lyo/Usp7/Rybp-ChIP-Rep1.bam
+bowtie2 -p 8 -3 5 --local -x /home/lyo/mm10 -U TrimmedSRR10032678.fastq.gz  | samtools sort -O bam -o /home/lyo/Usp7/Rybp-ChIP-Rep2.bam
+
+samtools merge Rybp.merge.bam Rybp-ChIP-Rep1.bam Rybp-ChIP-Rep2.bam
+samtools index Rybp.merge.bam
+macs2 callpeak -t /home/lyo/Usp7/finalbam/Rybp.merge.bam -c /home/lyo/Usp7/finalbam/Input.merge.bam -f BAM -g hs -n Rybp -B -q 0.01
+
+#R
+#Chipseeker 注释
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+utils:::menuInstallLocal()
+
+BiocManager::install("ChIPseeker")
+BiocManager::install("GenomicFeatures")
+BiocManager::install("GenomeInfoDb")
+BiocManager::install("vctrs")
+BiocManager::install("org.Mm.eg.db")
+BiocManager::install("GO.db")
+BiocManager::install("DO.db")
+BiocManager::install("TxDb.Mmusculus.UCSC.mm9.knownGene")
+BiocManager::install("clusterProfiler")
+
+library("AnnotationDbi")
+library("org.Mm.eg.db")
+library("ChIPseeker")
+library("GenomeInfoDb")
+library("GenomicRanges")
+library("GenomicFeatures")
+library("TxDb.Mmusculus.UCSC.mm10.knownGene")
+library("clusterProfiler")
+
+setwd("G:/Stemcells/Usp7bioinfo/Usp7callpeaks/")
+txdb <- TxDb.Mmusculus.UCSC.mm10.knownGene
+Rybp <- readPeakFile("Rybp_peaks.narrowPeak")
+Rybppeak <- annotatePeak(Rybp, tssRegion=c(-3000, 3000),
+                         TxDb=txdb, annoDb="org.Mm.eg.db")
+write.csv(Rybppeak, file = "G:/Stemcells/Usp7bioinfo/Usp7callpeaks/Rybp_Anno.csv")
+
