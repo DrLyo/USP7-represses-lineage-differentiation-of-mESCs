@@ -1,0 +1,105 @@
+#Usp7 KD RNA-seq
+#Linux
+fastp -i Mesc-plko-1_R1.fq.gz -I Mesc-plko-1_R2.fq.gz -o Mesc_plko_1_R1_clean.fq.gz -O Mesc_plko_1_R2_clean.fq.gz -z 4 -q 20 -u 30 -n 10 -h esc_plko_1.html
+hisat2 -t -p 8 -x  /home/lyo/index/hisat2/mm10/genome -1 /home/lyo/RNA-seq20210506/plko-1_1.clean.fq.gz -2 /home/lyo/RNA-seq20210506/plko-1_2.clean.fq.gz -S plko_1.sam
+samtools view -S plko_1.sam -b > plko_1.bam
+    samtools sort plko_1.bam -o plko_1_sorted.bam
+    samtools index plko_1_sorted.bam
+htseq-count -r name -f bam /home/lyo/RNA-seq20210506/plko_1_sorted.bam /home/lyo/index/count/gencode.vM25.annotation.gtf > plko_1.count 
+bamCoverage -b Usp7-Bethyl.sorted.bam  -o Usp7-Bethyl.bw
+# Repeat the above steps for other RNA-seq data
+
+##R##
+setwd("E:/Stemcells/USP7bioinfo/RNA-seq")
+options(stringsAsFactors = FALSE)
+
+Ctr1 <-read.table("shNC_1.count",sep = "\t",col.names = c("gene_id","Ctr1"))
+Ctr2 <-read.table("shNC_2.count",sep = "\t",col.names = c("gene_id","Ctr2"))
+Ctr3 <-read.table("shNC_3.count",sep = "\t",col.names = c("gene_id","Ctr3"))
+KD1 <-read.table("sh2_1.count",sep = "\t",col.names = c("gene_id","KD1"))
+KD2 <-read.table("sh2_2.count",sep = "\t",col.names = c("gene_id","KD2"))
+KD3 <-read.table("sh2_3.count",sep = "\t",col.names = c("gene_id","KD1"))
+
+
+raw_count1 <- merge(Ctr1, Ctr2,  by="gene_id")
+raw_count2 <- merge(Ctr3, KD1,  by="gene_id")
+raw_count3 <- merge(KD2, KD3,  by="gene_id")
+raw_count5 <- merge(raw_count1, raw_count2, by="gene_id")
+raw_count <- merge(raw_count5, raw_count3, by="gene_id")
+
+
+
+head(raw_count)
+raw_count_filt <- raw_count[-1:-5,] 
+ENSEMBL <- gsub("\\.\\d*", "", raw_count_filt$gene_id) 
+row.names(raw_count_filt) <- ENSEMBL 
+head(raw_count_filt)
+
+BiocManager::install("DESeq2")
+library("DESeq2")
+
+#refer to https://www.jianshu.com/p/604b852d301d 
+colData <- data.frame(row.names=colnames(mycounts), condition)
+countData_1st <- read.csv ("diff_name.csv")
+rownames(countData_1st)<-countData_1st[,1]
+countData_1st_filt1 <- countData_1st[,-1] #删掉???2???
+write.csv(countData_1st_filt1, file = "countData_1st_filt1.csv" )
+allcounts = read.csv("countData_1st_filt1.csv")
+rownames(allcounts)<- allcounts[,1]
+a3<-a[,-1]
+a2 = a[,2:7]
+condition <- factor(c(rep("control",3),rep("treat",3)), levels = c("control","treat"))
+condition
+colData <- data.frame(name=colnames(countData_1st_filt1), condition)
+dds <- DESeqDataSetFromMatrix(countData = countData_1st_filt1, colData, design= ~ condition)
+colData(dds)
+nrow(dds)
+dds2 <- dds[ rowSums(counts(dds)) > 1, ]
+nrow(dds2)
+head(dds2)
+dds3 <- DESeq(dds2)
+rld <- rlogTransformation(dds3)  
+data_new=assay(rld)
+write.csv(data_new,file="gene_Norlization.csv",quote=FALSE)
+plot_raw_data=round(countData_1st_filt1,0)
+par(cex = 0.7)
+n.sample=ncol(countData_1st_filt1)
+if(n.sample>40) par(cex = 0.5)
+cols <- rainbow(n.sample*1.2)
+par(mfrow=c(2,2))
+boxplot(log2(plot_raw_data), col = cols,main="expression value",las=2)
+boxplot(data_new, col = cols,main="expression value",las=2)
+plot_raw_data2 = as.numeric(unlist(plot_raw_data))
+hist(log2(plot_raw_data2))
+hist(data_new)
+rld <- rlog(dds, blind=FALSE)
+head(assay(rld), 3)
+plotPCA(rld,  intgroup = c("name", "condition"))
+plotPCA(rld,  intgroup = c( "condition"))
+library(ggplot2)
+p<-plotPCA(rld, intgroup = c("name", "condition"),ntop = 500, returnData = FALSE)
+ggsave(p,file="PCA.pdf",width=12,height = 120,limitsize = FALSE)
+dds <- DESeq(dds)
+rld <- rlog(dds)
+dists <- dist(t(assay(rld)))
+dds2 <- DESeq(dds)
+rld <- rlogTransformation(dds2)  
+data_new=assay(rld)
+write.csv(data_new,file="gene_Norlization.csv",quote=FALSE)
+res = results(dds, contrast=c("condition","control","treat"))
+write.csv(res,file="All_results2.csv")
+results2 = read.csv("All_results2.csv")
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+ BiocManager::install("biomaRt")
+ library("biomaRt")
+ library("curl")
+ mart <- useDataset("mmusculus_gene_ensembl", useMart("ensembl"))
+ my_ensembl_gene_id <-row.names(res)
+ mms_symbols <- getBM(attributes=c('ensembl_gene_id','external_gene_name',"description"),
+                       filters = 'ensembl_gene_id', values = my_ensembl_gene_id, mart = mart)
+ final_res <- merge(mms_symbols, results2, by = "ensembl_gene_id") 
+ write.table(final_res, file="final_res.csv")
+  up<-subset(final_res,pvalue<=0.05 & log2FoldChange>=1)
+  down<-subset(final_res,pvalue<=0.05 & log2FoldChange<= -1)
+  none<-subset(final_res,pvalue>0.05 | (log2FoldChange < 1 &log2FoldChange > -1))
